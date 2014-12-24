@@ -126,6 +126,7 @@ fn new_dbus_message_iter() -> ffi::DBusMessageIter {
 pub enum MessageItem {
     Array(Vec<MessageItem>, int),
     Variant(Box<MessageItem>),
+    // No ergonomic API yet.
     DictEntry(Box<MessageItem>, Box<MessageItem>),
     Str(String),
     Bool(bool),
@@ -138,16 +139,37 @@ pub enum MessageItem {
     UInt64(u64),
 }
 
+impl MessageItem {
+    pub fn into_variant(self) -> MessageItem {
+        MessageItem::Variant(box self)
+    }
+}
 
 pub trait ToMessageItem for Sized? {
     fn to_message_item(&self) -> MessageItem;
 }
 
-// I'll hold off on MessageItem::Array for now.  I think the way it is typed is insufficient.
+impl<T> ToMessageItem for [T] where T: ToMessageItem {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Array(self.iter().map(|item| item.to_message_item()).collect(), -1)
+    }
+}
+
+impl<T> ToMessageItem for Vec<T> where T: ToMessageItem {
+    fn to_message_item(&self) -> MessageItem {
+        self.as_slice().to_message_item()
+    }
+}
 
 impl ToMessageItem for str {
     fn to_message_item(&self) -> MessageItem {
         MessageItem::Str(self.to_string())
+    }
+}
+
+impl ToMessageItem for String {
+    fn to_message_item(&self) -> MessageItem {
+        self.as_slice().to_message_item()
     }
 }
 
@@ -407,6 +429,8 @@ impl Message {
     }
 
     pub fn append_item<Sized? T>(&mut self, v: &T) where T: ToMessageItem {
+        // What are the implications of creating new dbus message iters for each
+        // message item?
         self.append_items(&[v.to_message_item()]);
     }
 

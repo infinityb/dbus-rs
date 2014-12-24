@@ -138,6 +138,67 @@ pub enum MessageItem {
     UInt64(u64),
 }
 
+
+pub trait ToMessageItem for Sized? {
+    fn to_message_item(&self) -> MessageItem;
+}
+
+// I'll hold off on MessageItem::Array for now.  I think the way it is typed is insufficient.
+
+impl ToMessageItem for str {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Str(self.to_string())
+    }
+}
+
+impl ToMessageItem for bool {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Bool(*self)
+    }
+}
+
+impl ToMessageItem for u8 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Byte(*self)
+    }
+}
+
+impl ToMessageItem for i16 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Int16(*self)
+    }
+}
+
+impl ToMessageItem for i32 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Int32(*self)
+    }
+}
+
+impl ToMessageItem for i64 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::Int64(*self)
+    }
+}
+
+impl ToMessageItem for u16 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::UInt16(*self)
+    }
+}
+
+impl ToMessageItem for u32 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::UInt32(*self)
+    }
+}
+
+impl ToMessageItem for u64 {
+    fn to_message_item(&self) -> MessageItem {
+        MessageItem::UInt64(*self)
+    }
+}
+
 fn iter_get_basic(i: &mut ffi::DBusMessageIter) -> i64 {
     let mut c: i64 = 0;
     unsafe {
@@ -343,6 +404,10 @@ impl Message {
             0 => Vec::new(),
             _ => MessageItem::from_iter(&mut i)
         }
+    }
+
+    pub fn append_item<Sized? T>(&mut self, v: &T) where T: ToMessageItem {
+        self.append_items(&[v.to_message_item()]);
     }
 
     pub fn append_items(&mut self, v: &[MessageItem]) {

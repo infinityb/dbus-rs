@@ -18,6 +18,7 @@ use std::ptr::{self, PtrExt};
 use std::collections::DList;
 use std::cell::{Cell, RefCell};
 use std::borrow::IntoCow;
+use std::os::unix::prelude::Fd;
 
 pub type TypeSig<'a> = std::string::CowString<'a>;
 
@@ -138,6 +139,7 @@ pub enum MessageItem {
     Struct(Vec<MessageItem>),
     Variant(Box<MessageItem>),
     DictEntry(Box<MessageItem>, Box<MessageItem>),
+    FileDescriptor(Fd),
     ObjectPath(String),
     Str(String),
     Bool(bool),
@@ -226,8 +228,14 @@ fn iter_append_dict(i: &mut ffi::DBusMessageIter, k: &MessageItem, v: &MessageIt
     assert!(unsafe { ffi::dbus_message_iter_close_container(i, &mut subiter) } != 0);
 }
 
-impl MessageItem {
+fn iter_append_fd(i: &mut ffi::DBusMessageIter, fd: Fd) {
+    unsafe {
+        let p: *const libc::c_void = std::mem::transmute(&fd);
+        ffi::dbus_message_iter_append_basic(i, ffi::DBUS_TYPE_UNIX_FD, p);
+    }
+}
 
+impl MessageItem {
     pub fn type_sig(&self) -> TypeSig<'static> {
         match self {
             // TODO: Can we make use of the ffi constants here instead of duplicating them?
@@ -246,6 +254,7 @@ impl MessageItem {
             &MessageItem::Variant(_) => "v".into_cow(),
             &MessageItem::DictEntry(ref k, ref v) => format!("{{{}{}}}", k.type_sig(), v.type_sig()).into_cow(),
             &MessageItem::ObjectPath(_) => "o".into_cow(),
+            &MessageItem::FileDescriptor(_) => "h".into_cow(),
         }
     }
 
@@ -266,6 +275,7 @@ impl MessageItem {
             &MessageItem::Variant(_) => ffi::DBUS_TYPE_VARIANT,
             &MessageItem::DictEntry(_,_) => ffi::DBUS_TYPE_DICT_ENTRY,
             &MessageItem::ObjectPath(_) => ffi::DBUS_TYPE_OBJECT_PATH,
+            &MessageItem::FileDescriptor(_) => ffi::DBUS_TYPE_UNIX_FD
         };
         s as i32
     }
@@ -353,6 +363,7 @@ impl MessageItem {
                 ffi::DBUS_TYPE_UINT32 => v.push(MessageItem::UInt32(iter_get_basic(i) as u32)),
                 ffi::DBUS_TYPE_UINT64 => v.push(MessageItem::UInt64(iter_get_basic(i) as u64)),
                 ffi::DBUS_TYPE_DOUBLE => v.push(MessageItem::Double(iter_get_f64(i))),
+                ffi::DBUS_TYPE_UNIX_FD => v.push(MessageItem::FileDescriptor(iter_get_basic(i) as Fd)),
 
                 _ => { panic!("D-Bus unsupported message type {} ({})", t, t as u8 as char); }
             }
@@ -388,6 +399,7 @@ impl MessageItem {
             &MessageItem::Struct(ref v) => iter_append_struct(i, &**v),
             &MessageItem::Variant(ref b) => iter_append_variant(i, &**b),
             &MessageItem::DictEntry(ref k, ref v) => iter_append_dict(i, &**k, &**v),
+            &MessageItem::FileDescriptor(fd) => iter_append_fd(i, fd),
             &MessageItem::ObjectPath(ref s) => unsafe {
                 let c = to_c_str(s);
                 let p = std::mem::transmute(&c);
